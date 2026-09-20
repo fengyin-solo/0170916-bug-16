@@ -57,12 +57,20 @@
             <h3 class="text-base font-semibold text-slate-900 mb-4">各类型知识数量</h3>
             <div class="h-64 md:h-72">
               <canvas id="chartBar"></canvas>
+              <div id="chartBarEmpty" class="h-full hidden flex-col items-center justify-center text-center">
+                <span class="iconify text-slate-300 mb-2" data-icon="lucide:bar-chart-3" data-width="32" data-height="32"></span>
+                <p class="text-sm text-slate-400">暂无知识数据，新增知识后这里将展示各类型知识数量</p>
+              </div>
             </div>
           </div>
           <div class="premium-card rounded-xl border border-slate-100 shadow-sm p-6">
             <h3 class="text-base font-semibold text-slate-900 mb-4">知识类型占比</h3>
             <div class="h-64 md:h-72">
               <canvas id="chartPie"></canvas>
+              <div id="chartPieEmpty" class="h-full hidden flex-col items-center justify-center text-center">
+                <span class="iconify text-slate-300 mb-2" data-icon="lucide:pie-chart" data-width="32" data-height="32"></span>
+                <p class="text-sm text-slate-400">暂无知识数据，新增知识后这里将展示知识类型占比</p>
+              </div>
             </div>
           </div>
         </section>
@@ -76,59 +84,38 @@
   var container = document.getElementById('overviewStats');
   if (!container) return;
 
-  var P = 'knowledge_platform_';
-  function load(key, fallback) {
-    try {
-      var s = localStorage.getItem(P + key);
-      return s != null ? JSON.parse(s) : fallback;
-    } catch (_) { return fallback; }
-  }
-
+  // 概览页所有数字与图表统一以 MockStore.getOverviewStats() 为唯一数据源，
+  // 与商家/集合/行业列表页使用同一批 MockStore getter，保证口径一致。
   function getOverviewStats() {
     if (typeof MockStore !== 'undefined' && typeof MockStore.getOverviewStats === 'function') {
       return MockStore.getOverviewStats();
     }
-    var merchants = load('merchants', [{ id: 'M001' }, { id: 'M002' }, { id: 'M003' }]);
-    var sets = load('merchantSets', []);
-    var industries = load('industries', [{ id: 'IND01' }, { id: 'IND02' }, { id: 'IND03' }]);
-    var merchantKnowledge = load('merchantKnowledge', {});
-    var merchantSetKnowledge = load('merchantSetKnowledge', {});
-    var industryKnowledge = load('industryKnowledge', {});
-    var globalKnowledge = load('globalKnowledge', []);
-
-    var merchantKnowledgeCount = 0;
-    merchants.forEach(function (m) { merchantKnowledgeCount += (merchantKnowledge[m.id] || []).length; });
-    var merchantSetKnowledgeCount = 0;
-    sets.forEach(function (s) { merchantSetKnowledgeCount += (merchantSetKnowledge[s.id] || []).length; });
-    var industryKnowledgeCount = 0;
-    industries.forEach(function (i) { industryKnowledgeCount += (industryKnowledge[i.id] || []).length; });
-    var globalCount = (globalKnowledge || []).length;
-
     return {
-      merchantCount: merchants.length,
-      merchantKnowledgeCount: merchantKnowledgeCount,
-      merchantSetCount: sets.length,
-      merchantSetKnowledgeCount: merchantSetKnowledgeCount,
-      industryCount: industries.length,
-      industryKnowledgeCount: industryKnowledgeCount,
-      globalKnowledgeCount: globalCount,
-      totalKnowledgeCount: merchantKnowledgeCount + merchantSetKnowledgeCount + industryKnowledgeCount + globalCount,
+      merchantCount: 0,
+      merchantKnowledgeCount: 0,
+      merchantSetCount: 0,
+      merchantSetKnowledgeCount: 0,
+      industryCount: 0,
+      industryKnowledgeCount: 0,
+      globalKnowledgeCount: 0,
+      totalKnowledgeCount: 0
     };
   }
 
-  var s = getOverviewStats();
-  var items = [
-    { label: '总知识数量', value: s.totalKnowledgeCount, unit: '条', icon: 'lucide:book-open' },
-    { label: '商家', value: s.merchantCount, unit: '家', icon: 'lucide:store' },
-    { label: '商家集合', value: s.merchantSetCount, unit: '个', icon: 'lucide:layers' },
-    { label: '行业数量', value: s.industryCount, unit: '个', icon: 'lucide:briefcase' },
+  var statItems = [
+    { key: 'totalKnowledgeCount', label: '总知识数量', unit: '条', icon: 'lucide:book-open' },
+    { key: 'merchantCount', label: '商家', unit: '家', icon: 'lucide:store' },
+    { key: 'merchantSetCount', label: '商家集合', unit: '个', icon: 'lucide:layers' },
+    { key: 'industryCount', label: '行业数量', unit: '个', icon: 'lucide:briefcase' }
   ];
-  container.innerHTML = items.map(function (item) {
+
+  // 首次构建统计卡片，数值放在带 id 的 span 中，刷新时只更新数字
+  container.innerHTML = statItems.map(function (item) {
     return '<div class="flex flex-col items-center justify-center py-6 px-4 text-center min-w-0">' +
       '<span class="iconify mb-2 text-slate-400" data-icon="' + item.icon + '" data-width="22" data-height="22"></span>' +
       '<div class="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1">' + item.label + '</div>' +
       '<div class="flex items-baseline justify-center gap-1">' +
-        '<span class="text-2xl md:text-3xl font-semibold text-slate-900 tabular-nums">' + Number(item.value) + '</span>' +
+        '<span id="stat-' + item.key + '" class="text-2xl md:text-3xl font-semibold text-slate-900 tabular-nums">0</span>' +
         '<span class="text-sm text-slate-500">' + item.unit + '</span>' +
       '</div>' +
     '</div>';
@@ -136,20 +123,59 @@
 
   // 图表配色（柔和区分、耐看）
   var chartLabels = ['商家知识', '商家集合知识', '行业知识', '通用知识'];
-  var chartCounts = [
-    s.merchantKnowledgeCount,
-    s.merchantSetKnowledgeCount,
-    s.industryKnowledgeCount,
-    s.globalKnowledgeCount
-  ];
+  var chartKeys = ['merchantKnowledgeCount', 'merchantSetKnowledgeCount', 'industryKnowledgeCount', 'globalKnowledgeCount'];
   var chartColors = ['#7c3aed', '#0891b2', '#059669', '#d97706'];
   var chartColorsLight = ['#a78bfa', '#22d3ee', '#34d399', '#fbbf24'];
 
-  if (typeof Chart !== 'undefined') {
+  var barChart = null;
+  var pieChart = null;
+
+  function buildCounts(s) {
+    return chartKeys.map(function (k) { return s[k]; });
+  }
+
+  function setEmptyVisible(emptyEl, visible) {
+    emptyEl.classList.toggle('hidden', !visible);
+    emptyEl.classList.toggle('flex', visible);
+  }
+
+  function renderStats(s) {
+    statItems.forEach(function (item) {
+      var el = document.getElementById('stat-' + item.key);
+      if (el) el.textContent = Number(s[item.key]) || 0;
+    });
+  }
+
+  // 柱状图与饼图共用同一份 chartCounts，合计必然吻合
+  function renderCharts(chartCounts) {
+    var hasData = chartCounts.some(function (v) { return v > 0; });
+
+    var barCanvas = document.getElementById('chartBar');
+    var pieCanvas = document.getElementById('chartPie');
+    var barEmpty = document.getElementById('chartBarEmpty');
+    var pieEmpty = document.getElementById('chartPieEmpty');
+
+    if (typeof Chart === 'undefined') return;
+
+    // 无数据时销毁图表并给出说明，避免空白画布
+    if (!hasData) {
+      if (barChart) { barChart.destroy(); barChart = null; }
+      if (pieChart) { pieChart.destroy(); pieChart = null; }
+      if (barCanvas) barCanvas.style.display = 'none';
+      if (pieCanvas) pieCanvas.style.display = 'none';
+      setEmptyVisible(barEmpty, true);
+      setEmptyVisible(pieEmpty, true);
+      return;
+    }
+
+    if (barCanvas) barCanvas.style.display = '';
+    if (pieCanvas) pieCanvas.style.display = '';
+    setEmptyVisible(barEmpty, false);
+    setEmptyVisible(pieEmpty, false);
+
     // 柱状图：从 0 开始保证柱子可见，Y 轴整数
-    var barCtx = document.getElementById('chartBar');
-    if (barCtx) {
-      new Chart(barCtx, {
+    if (!barChart && barCanvas) {
+      barChart = new Chart(barCanvas, {
         type: 'bar',
         data: {
           labels: chartLabels,
@@ -162,7 +188,7 @@
             borderRadius: 6,
             borderSkipped: false,
             barPercentage: 0.6,
-            categoryPercentage: 0.65,
+            categoryPercentage: 0.65
           }]
         },
         options: {
@@ -195,12 +221,15 @@
           }
         }
       });
+    } else if (barChart) {
+      barChart.data.labels = chartLabels;
+      barChart.data.datasets[0].data = chartCounts;
+      barChart.update();
     }
 
     // 饼图：与柱状图同色系
-    var pieCtx = document.getElementById('chartPie');
-    if (pieCtx) {
-      new Chart(pieCtx, {
+    if (!pieChart && pieCanvas) {
+      pieChart = new Chart(pieCanvas, {
         type: 'pie',
         data: {
           labels: chartLabels,
@@ -209,7 +238,7 @@
             backgroundColor: chartColorsLight,
             borderColor: '#ffffff',
             borderWidth: 3,
-            hoverOffset: 8,
+            hoverOffset: 8
           }]
         },
         options: {
@@ -236,8 +265,25 @@
           }
         }
       });
+    } else if (pieChart) {
+      pieChart.data.labels = chartLabels;
+      pieChart.data.datasets[0].data = chartCounts;
+      pieChart.update();
     }
   }
+
+  // 每次进入概览页都基于最新存储重新渲染（首次加载 + bfcache 恢复）
+  function refresh() {
+    var s = getOverviewStats();
+    renderStats(s);
+    renderCharts(buildCounts(s));
+  }
+
+  refresh();
+  window.addEventListener('pageshow', function (event) {
+    // 从浏览器前进/后退缓存（bfcache）恢复时页面脚本不会重新执行，需手动刷新
+    if (event.persisted) refresh();
+  });
 })();
   </script>
 </body>

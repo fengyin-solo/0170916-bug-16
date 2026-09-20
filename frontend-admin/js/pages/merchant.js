@@ -86,6 +86,7 @@
       Table.render(tbody, state.merchants, function (m) {
         return '<td class="font-mono text-sm text-slate-700">' + Utils.escapeHtml(m.id) + '</td>' +
           '<td class="text-slate-800">' + Utils.escapeHtml(m.name) + '</td>' +
+          '<td class="tabular-nums text-slate-600">' + MockStore.getMerchantKnowledge(m.id).length + '</td>' +
           '<td class="text-right">' +
             '<button type="button" class="btn-link m-edit mr-2" data-id="' + m.id + '">编辑</button>' +
             '<button type="button" class="btn-link btn-link-danger m-delete" data-id="' + m.id + '">删除</button>' +
@@ -243,6 +244,7 @@
           Confirm.show('确定删除这条知识？', function () {
             MockStore.deleteMerchantKnowledge(mid, btn.dataset.id);
             self.render();
+            MerchantManager.render();
             Toast.show('知识删除成功', 'success');
           });
         });
@@ -325,6 +327,7 @@
       
       this.closeModal();
       this.render();
+      MerchantManager.render();
     }
   };
 
@@ -630,6 +633,7 @@
       state.currentMerchantId = merchantId;
       elements.merchantSelect.value = merchantId;
       MerchantManager.fillSelect();
+      MerchantManager.render();
       KnowledgeManager.fillFormSelect();
       KnowledgeManager.render();
       Toast.show('成功导入 ' + items.length + ' 条知识', 'success');
