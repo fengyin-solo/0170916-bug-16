@@ -51,18 +51,34 @@
           </div>
         </section>
 
-        <!-- 图表：不同类型知识数量 & 占比 -->
+        <!-- 图表：不同类型知识数量 & 占比（两份图始终基于同一份统计快照） -->
         <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div class="premium-card rounded-xl border border-slate-100 shadow-sm p-6">
-            <h3 class="text-base font-semibold text-slate-900 mb-4">各类型知识数量</h3>
-            <div class="h-64 md:h-72">
+          <div class="premium-card rounded-xl border border-slate-100 shadow-sm p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-4 gap-2">
+              <h3 class="text-base font-semibold text-slate-900">各类型知识数量</h3>
+              <span id="chartBarTotal" class="text-xs text-slate-400 whitespace-nowrap"></span>
+            </div>
+            <div class="h-64 md:h-72 relative">
               <canvas id="chartBar"></canvas>
+              <div id="chartBarEmpty" class="empty-state-chart hidden absolute inset-0 flex-col items-center justify-center text-center">
+                <span class="iconify text-slate-300 mb-2" data-icon="lucide:bar-chart-3" data-width="32" data-height="32"></span>
+                <p class="text-sm text-slate-400">暂无知识数据</p>
+                <p class="text-xs text-slate-300 mt-1">新增任意类型知识后，这里将展示数量分布</p>
+              </div>
             </div>
           </div>
-          <div class="premium-card rounded-xl border border-slate-100 shadow-sm p-6">
-            <h3 class="text-base font-semibold text-slate-900 mb-4">知识类型占比</h3>
-            <div class="h-64 md:h-72">
+          <div class="premium-card rounded-xl border border-slate-100 shadow-sm p-6 flex flex-col">
+            <div class="flex items-center justify-between mb-4 gap-2">
+              <h3 class="text-base font-semibold text-slate-900">知识类型占比</h3>
+              <span id="chartPieTotal" class="text-xs text-slate-400 whitespace-nowrap"></span>
+            </div>
+            <div class="h-64 md:h-72 relative">
               <canvas id="chartPie"></canvas>
+              <div id="chartPieEmpty" class="empty-state-chart hidden absolute inset-0 flex-col items-center justify-center text-center">
+                <span class="iconify text-slate-300 mb-2" data-icon="lucide:pie-chart" data-width="32" data-height="32"></span>
+                <p class="text-sm text-slate-400">暂无知识数据</p>
+                <p class="text-xs text-slate-300 mt-1">新增任意类型知识后，这里将展示类型占比</p>
+              </div>
             </div>
           </div>
         </section>
@@ -84,6 +100,7 @@
     } catch (_) { return fallback; }
   }
 
+  // 统计口径与各列表页一致：遍历当前实体列表，逐个取知识数组长度后汇总
   function getOverviewStats() {
     if (typeof MockStore !== 'undefined' && typeof MockStore.getOverviewStats === 'function') {
       return MockStore.getOverviewStats();
@@ -116,48 +133,92 @@
     };
   }
 
-  var s = getOverviewStats();
-  var items = [
-    { label: '总知识数量', value: s.totalKnowledgeCount, unit: '条', icon: 'lucide:book-open' },
-    { label: '商家', value: s.merchantCount, unit: '家', icon: 'lucide:store' },
-    { label: '商家集合', value: s.merchantSetCount, unit: '个', icon: 'lucide:layers' },
-    { label: '行业数量', value: s.industryCount, unit: '个', icon: 'lucide:briefcase' },
-  ];
-  container.innerHTML = items.map(function (item) {
-    return '<div class="flex flex-col items-center justify-center py-6 px-4 text-center min-w-0">' +
-      '<span class="iconify mb-2 text-slate-400" data-icon="' + item.icon + '" data-width="22" data-height="22"></span>' +
-      '<div class="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1">' + item.label + '</div>' +
-      '<div class="flex items-baseline justify-center gap-1">' +
-        '<span class="text-2xl md:text-3xl font-semibold text-slate-900 tabular-nums">' + Number(item.value) + '</span>' +
-        '<span class="text-sm text-slate-500">' + item.unit + '</span>' +
-      '</div>' +
-    '</div>';
-  }).join('');
-
   // 图表配色（柔和区分、耐看）
   var chartLabels = ['商家知识', '商家集合知识', '行业知识', '通用知识'];
-  var chartCounts = [
-    s.merchantKnowledgeCount,
-    s.merchantSetKnowledgeCount,
-    s.industryKnowledgeCount,
-    s.globalKnowledgeCount
-  ];
   var chartColors = ['#7c3aed', '#0891b2', '#059669', '#d97706'];
   var chartColorsLight = ['#a78bfa', '#22d3ee', '#34d399', '#fbbf24'];
 
-  if (typeof Chart !== 'undefined') {
+  // 持有当前图表实例，重新渲染前必须销毁，避免 canvas 上残留旧图
+  var barChart = null;
+  var pieChart = null;
+
+  var els = {
+    barCanvas: document.getElementById('chartBar'),
+    pieCanvas: document.getElementById('chartPie'),
+    barEmpty: document.getElementById('chartBarEmpty'),
+    pieEmpty: document.getElementById('chartPieEmpty'),
+    barTotal: document.getElementById('chartBarTotal'),
+    pieTotal: document.getElementById('chartPieTotal')
+  };
+
+  function renderStats(s) {
+    var items = [
+      { label: '总知识数量', value: s.totalKnowledgeCount, unit: '条', icon: 'lucide:book-open' },
+      { label: '商家', value: s.merchantCount, unit: '家', icon: 'lucide:store' },
+      { label: '商家集合', value: s.merchantSetCount, unit: '个', icon: 'lucide:layers' },
+      { label: '行业数量', value: s.industryCount, unit: '个', icon: 'lucide:briefcase' }
+    ];
+    container.innerHTML = items.map(function (item) {
+      return '<div class="flex flex-col items-center justify-center py-6 px-4 text-center min-w-0">' +
+        '<span class="iconify mb-2 text-slate-400" data-icon="' + item.icon + '" data-width="22" data-height="22"></span>' +
+        '<div class="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1">' + item.label + '</div>' +
+        '<div class="flex items-baseline justify-center gap-1">' +
+          '<span class="text-2xl md:text-3xl font-semibold text-slate-900 tabular-nums">' + Number(item.value) + '</span>' +
+          '<span class="text-sm text-slate-500">' + item.unit + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function destroyCharts() {
+    if (barChart) { barChart.destroy(); barChart = null; }
+    if (pieChart) { pieChart.destroy(); pieChart = null; }
+  }
+
+  function setChartEmpty(showEmpty) {
+    [els.barCanvas, els.pieCanvas].forEach(function (canvas) {
+      if (canvas) canvas.style.display = showEmpty ? 'none' : '';
+    });
+    [els.barEmpty, els.pieEmpty].forEach(function (el) {
+      if (!el) return;
+      el.classList.toggle('hidden', !showEmpty);
+      el.classList.toggle('flex', showEmpty);
+    });
+  }
+
+  function renderCharts(s) {
+    // 两张图都取自同一份统计快照，各自拷贝一份数组，口径必然一致
+    var counts = [
+      s.merchantKnowledgeCount,
+      s.merchantSetKnowledgeCount,
+      s.industryKnowledgeCount,
+      s.globalKnowledgeCount
+    ];
+    var total = counts.reduce(function (a, b) { return a + b; }, 0);
+
+    if (els.barTotal) els.barTotal.textContent = '合计 ' + total + ' 条';
+    if (els.pieTotal) els.pieTotal.textContent = '合计 ' + total + ' 条';
+
+    destroyCharts();
+
+    // 没有任何知识时不画图，给出说明而不是空白图
+    if (total === 0 || typeof Chart === 'undefined') {
+      setChartEmpty(total === 0);
+      return;
+    }
+    setChartEmpty(false);
+
     // 柱状图：从 0 开始保证柱子可见，Y 轴整数
-    var barCtx = document.getElementById('chartBar');
-    if (barCtx) {
-      new Chart(barCtx, {
+    if (els.barCanvas) {
+      barChart = new Chart(els.barCanvas, {
         type: 'bar',
         data: {
-          labels: chartLabels,
+          labels: chartLabels.slice(),
           datasets: [{
             label: '知识数量（条）',
-            data: chartCounts,
-            backgroundColor: chartColorsLight,
-            borderColor: chartColors,
+            data: counts.slice(),
+            backgroundColor: chartColorsLight.slice(),
+            borderColor: chartColors.slice(),
             borderWidth: 1,
             borderRadius: 6,
             borderSkipped: false,
@@ -197,16 +258,15 @@
       });
     }
 
-    // 饼图：与柱状图同色系
-    var pieCtx = document.getElementById('chartPie');
-    if (pieCtx) {
-      new Chart(pieCtx, {
+    // 饼图：与柱状图使用同一份数据（独立拷贝），保证合计吻合
+    if (els.pieCanvas) {
+      pieChart = new Chart(els.pieCanvas, {
         type: 'pie',
         data: {
-          labels: chartLabels,
+          labels: chartLabels.slice(),
           datasets: [{
-            data: chartCounts,
-            backgroundColor: chartColorsLight,
+            data: counts.slice(),
+            backgroundColor: chartColorsLight.slice(),
             borderColor: '#ffffff',
             borderWidth: 3,
             hoverOffset: 8,
@@ -227,8 +287,8 @@
               bodyFont: { size: 12 },
               callbacks: {
                 label: function (ctx) {
-                  var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
-                  var pct = total ? ((ctx.raw / total) * 100).toFixed(1) : 0;
+                  var sum = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+                  var pct = sum ? ((ctx.raw / sum) * 100).toFixed(1) : '0.0';
                   return ctx.label + '：' + ctx.raw + ' 条（' + pct + '%）';
                 }
               }
@@ -238,6 +298,22 @@
       });
     }
   }
+
+  // 每次进入概览都重新取数并整体渲染，避免 bfcache 恢复或数据变化后停留在旧结果
+  function renderOverview() {
+    var s = getOverviewStats();
+    renderStats(s);
+    renderCharts(s);
+    // 动态插入的图标需要重新扫描（统计卡片重绘、空态切换时）
+    if (globalThis.Iconify && typeof globalThis.Iconify.scanDOM === 'function') {
+      globalThis.Iconify.scanDOM();
+    }
+  }
+
+  // pageshow 在首次加载与从 bfcache 恢复时都会触发，统一在这里渲染
+  window.addEventListener('pageshow', renderOverview);
+  // 其他标签页修改了数据并切回本页时同步刷新
+  window.addEventListener('storage', renderOverview);
 })();
   </script>
 </body>
